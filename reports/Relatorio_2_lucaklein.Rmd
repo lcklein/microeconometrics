@@ -1,0 +1,1007 @@
+---
+title: "Relatório 2"
+author: "Luca Klein"
+date: "`r Sys.Date()`"
+output: pdf_document
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(DT)
+library("caTools")
+library("ROCR")
+library(MASS)
+library(DataExplorer)
+library(psych)
+library(lmtest)
+library(countreg)
+library(AER)
+# source("C:/Users/Luca Klein/Documents/UFMG/materias/2_semestre/microeconometria/application/scripts/packs.R")
+library(tidyverse)
+library(janitor)
+library(flextable)
+library(kableExtra)
+library(finalfit)
+library(mlogit)
+library(GGally)
+# Funções
+cod_uf <- function(x) {
+  x <- x %>%
+    mutate(
+      uf = case_when(
+        uf == 11 ~ "RO",
+        uf ==  12 ~	"AC",
+        uf ==  13 ~	"AM",
+        uf ==  14 ~	"RR",
+        uf ==  15	~ "PA",
+        uf ==  16	~ "AP",
+        uf ==  17 ~	"TO",
+        uf == 21 ~	"MA",
+        uf == 22 ~	"PI",
+        uf == 23 ~	"CE",
+        uf == 24 ~	"RN",
+        uf == 25 ~	"PB",
+        uf == 26 ~	"PE",
+        uf == 27 ~	"AL",
+        uf == 28 ~	"SE",
+        uf == 29 ~	"BA",
+        uf == 31 ~	"MG",
+        uf == 32 ~	"ES",
+        uf == 33 ~	"RJ",
+        uf == 35 ~	"SP",
+        uf == 41 ~	"PR",
+        uf ==  42 ~	"SC",
+        uf ==  43 ~	"RS",
+        uf ==  50 ~	"MS",
+        uf ==  51 ~	"MT",
+        uf == 52 ~	"GO",
+        uf == 53 ~	"DF",
+        
+      )
+
+    )
+}
+
+sex_change <- function(x){
+  
+  x <- x %>% 
+    mutate(sexo = case_when(sexo == 0 ~ "feminino",
+                            sexo == 1 ~ "masculino"))
+}
+
+
+
+# Dados
+
+pnad_1 <- readRDS("C:/Users/Luca Klein/Documents/UFMG/materias/2_semestre/microeconometria/application/data/pnad_02_12") %>%
+  dplyr::select("UF", "V2007", "V2010", "VD4002", "V1022") %>%
+  clean_names() %>%
+  rename(
+    sexo = 2,
+    raça = 3,
+    desemprego = 4,
+    local = 5
+  ) %>%
+  mutate(
+    raça = case_when(
+      raça == "Branca" ~ 1,
+      raça %in% c("Parda", "Preta", "Amarela", "Indígena",
+                  "Ignorado") ~ 0
+    ),
+    desemprego = case_when(
+      desemprego == "Pessoas ocupadas" ~ 1,
+      desemprego == "Pessoas desocupadas" ~ 0
+    )
+  ) %>%
+  na.omit()
+
+
+pnad_2 <- readRDS("C:/Users/Luca Klein/Documents/UFMG/materias/2_semestre/microeconometria/application/data/pnad_02_22") %>%
+  dplyr::select("UF", "V2007", "V2010", "VD4002", "V1022") %>%
+  clean_names() %>%
+  rename(
+    sexo = 2,
+    raça = 3,
+    desemprego = 4,
+    local = 5
+  ) %>%
+  mutate(
+    raça = case_when(
+      raça == "Branca" ~ 1,
+      raça %in% c("Parda", "Preta", "Amarela", "Indígena",
+                  "Ignorado") ~ 0
+    ),
+    desemprego = case_when(
+      desemprego == "Pessoas ocupadas" ~ 1,
+      desemprego == "Pessoas desocupadas" ~ 0
+    )
+  ) %>%
+  na.omit()
+
+
+sc_1 <- pnad_1 %>%
+  filter(uf == "Santa Catarina") %>%
+  dplyr::select(-uf) %>% 
+  dplyr::select(desemprego, everything())
+  
+
+ba_1 <- pnad_1 %>%
+  filter(uf == "Bahia") %>%
+  dplyr::select(-uf) %>% 
+  dplyr::select(desemprego, everything())
+
+sc_2 <- pnad_2 %>%
+  filter(uf == "Santa Catarina") %>%
+  dplyr::select(-uf) %>% 
+  dplyr::select(desemprego, everything())
+
+ba_2 <- pnad_2 %>%
+  filter(uf == "Bahia") %>%
+  dplyr::select(-uf) %>% 
+  dplyr::select(desemprego, everything())
+
+# multinomial
+mpnad_1 <- read_csv("C:/Users/Luca Klein/Documents/UFMG/materias/2_semestre/microeconometria/application/data//PNADC_022012_resumida.csv")
+
+mpnad_2 <- read_csv("C:/Users/Luca Klein/Documents/UFMG/materias/2_semestre/microeconometria/application/data//PNADC_022022_resumida.csv")
+
+mpnad_1 <- mpnad_1 %>%
+  dplyr::select(UF, sexo, rendtrabtot, urbano, horastrabtot,nfilho014 ,idade  , anosest) %>%
+  mutate(uf = UF) %>%
+  cod_uf() %>%
+  na.omit() %>%
+  sex_change()
+
+
+mpnad_2 <- mpnad_2 %>%
+  dplyr::select(UF, sexo, rendtrabtot, urbano, horastrabtot,nfilho014 ,idade  , anosest) %>%
+  mutate(uf = UF) %>%
+  cod_uf() %>%
+  na.omit() %>%
+  sex_change()
+
+msc_1 <- mpnad_1 %>%
+  filter(uf == "SC") %>%
+  dplyr::select(-uf,-UF) %>%
+  mutate(renda = ifelse(
+    rendtrabtot <= 1000,
+    1,
+    ifelse(
+      rendtrabtot > 1000 & rendtrabtot <= 2500,
+      2,
+      ifelse(rendtrabtot > 2500, 3, 0)
+    )
+  )) %>% 
+  dplyr::select(renda,sexo,urbano)
+
+
+mba_1 <- mpnad_1 %>%
+  filter(uf == "BA") %>%
+  dplyr::select(-uf) %>%
+  mutate(renda = ifelse(
+    rendtrabtot <= 1000,
+    1,
+    ifelse(
+      rendtrabtot > 1000 & rendtrabtot <= 2500,
+      2,
+      ifelse(rendtrabtot > 2500, 3, 0)
+    )
+  ))%>% 
+  dplyr::select(renda,sexo,urbano)
+
+msc_2 <- mpnad_2 %>%
+  filter(uf == "SC") %>%
+  dplyr::select(-uf) %>%
+  mutate(renda = ifelse(
+    rendtrabtot <= 1000,
+    1,
+    ifelse(
+      rendtrabtot > 1000 & rendtrabtot <= 2500,
+      2,
+      ifelse(rendtrabtot > 2500, 3, 0)
+    )
+  ))%>% 
+  dplyr::select(renda,sexo,urbano)
+
+mba_2 <- mpnad_2 %>%
+  filter(uf == "BA") %>%
+  mutate(renda = ifelse(
+    rendtrabtot <= 1000,
+    1,
+    ifelse(
+      rendtrabtot > 1000 & rendtrabtot <= 2500,
+      2,
+      ifelse(rendtrabtot > 2500, 3, 0)
+    )
+  ))%>% 
+  dplyr::select(renda,sexo,urbano)
+
+# Logit
+
+logic_sc_1 <- glm(desemprego ~ raça + sexo + local ,
+                  family = binomial(link = "logit"),
+                  data = sc_1)
+
+logic_ba_1 <- glm(desemprego ~ raça + sexo + local ,
+                  family = binomial(link = "logit"),
+                  data = ba_1)
+
+
+
+logic_sc_2 <- glm(desemprego ~ raça + sexo + local ,
+                  family = binomial(link = "logit"),
+                  data = sc_2)
+
+
+logic_ba_2 <- glm(desemprego ~ raça + sexo + local ,
+                  family = binomial(link = "logit"),
+                  data = ba_2)
+
+# Probit
+
+probit_sc_1 <- glm(desemprego ~ raça + sexo + local ,
+                   family = binomial(link = "probit"),
+                   data = sc_1)
+
+probit_ba_1 <- glm(desemprego ~ raça + sexo + local ,
+                   family = binomial(link = "probit"),
+                   data = ba_1)
+
+
+
+probit_sc_2 <- glm(desemprego ~ raça + sexo + local ,
+                   family = binomial(link = "probit"),
+                   data = sc_2)
+
+
+probit_ba_2 <- glm(desemprego ~ raça + sexo + local ,
+                   family = binomial(link = "probit"),
+                   data = ba_2)
+
+
+# Logit Multi
+m_l_sc1 <-
+  mlogit(
+    renda ~ 1 | sexo + urbano ,
+    data = msc_1,
+    shape = "wide",
+    reflevel = "1"
+  )
+
+m_teste_sc_1 <- mlogit(
+  renda ~ 1 | sexo + urbano ,
+  data = msc_1,
+  shape = "wide",
+  reflevel = "1",
+  alt.subset = c("1", "2")
+)
+
+m_l_ba1 <- mlogit(renda ~ 1 | sexo + urbano ,
+                  data = mba_1,
+                  shape = "wide",
+                  reflevel = "1"
+)
+
+m_teste_ba_1 <- mlogit(
+  renda ~ 1 | sexo + urbano ,
+  data = mba_1,
+  shape = "wide",
+  reflevel = "1",
+  alt.subset = c("1", "2")
+)
+
+m_l_sc2 <- mlogit(renda ~ 1 | sexo + urbano,
+                  data = msc_2,
+                  shape = "wide",
+                  reflevel = "1"
+)
+
+m_teste_sc_2 <- mlogit(
+  renda ~ 1 | sexo + urbano ,
+  data = msc_2,
+  shape = "wide",
+  reflevel = "1",
+  alt.subset = c("1", "2")
+)
+
+m_l_ba2 <- mlogit(renda ~ 1 | sexo + urbano ,
+                  data = mba_2,
+                  shape = "wide",
+                  reflevel = "1"
+)
+
+m_teste_ba_2 <- mlogit(
+  renda ~ 1 | sexo + urbano ,
+  data = mba_2,
+  shape = "wide",
+  reflevel = "1",
+  alt.subset = c("1", "2")
+)
+
+
+
+
+```
+
+# 1.Modelos de Resposta Binária
+
+Quando tratamos de regressões lineares tendemos a incluir variáveis cuja distribuição é contínua, contudo, existe a modelagem linear para variáveis discretas. Tal abordagem para variáveis numeráveis pode apresentar o comportamento binário, em que sua interpretação se pauta em probabilidades. No entanto, temos que a interpretação dos coeficientes e dos testes de inferência não se dão da mesma maneira, bem como a ocorrência de problemas de heterocedasticidade e probabilidades fora do intervalo entre 0 e 1. Nesse sentido, uma alternativa para modelagem desse tipo de informação se dá via modelos logito e probito. A estimação de tais métodos resulta em respostas não lineares nos parâmetros, sendo assim um dos caminhos que que contornam tal característica  é por meio de processos de máxima verossimilhança. Ademais, dado a dificuldade de interpretação do coeficientes estimados nessas classes de modelos, muitas vezes cabe interpretar o sinal do parâmetro para que seja possível inferir se aquele evento analisado tem maior ou menor chance de ocorrer, dado uma variável independente.
+
+## 1.1 Logit
+
+A classe de modelos logísticos, como já comentado, se pauta em investigar a relação probabilística de uma variável ordinal ou binária. Nessa linha, a partir de uma variável categórica binária, nosso vetor dependente (Y), temos que a combinação de regressores que maximiza a probabilidade do evento Y acontecer, dado pela máxima verossimilhança, irá resultar na curva logística. Posteriormente, como os coeficientes estarão no formato logaritmo basta exponencializarmos os estimadores para auferir a razão de chances e, assim, chegamos nas probabilidades ligadas a ocorrência do evento Y dado o comportamento dos regressores.
+
+## 1.2 Probit
+
+Os modelos probito tem uma aplicação muito similar aos de logito, em que a diferença entre eles se pauta na suposição da distribuição dos erros e na interpretação do resultados. Então, o Probit é utilizado quando os erros têm dispersão gaussiana e o Logit quando a dispersão é logística. Além disso, as estimações dos coeficientes se dão da mesma maneira, ou seja, a partir da maximização da função da máxima verossimilhança, contudo, dado a forma funcional dessa classe de modelos, a interpretação dos parâmetros é feita via efeito marginal ou sinal do estimador.
+
+
+## 1.3 Aplicação
+
+Para o presente trabalho foi selecionado dois períodos e duas geografias a partir dos microdados da PNAD. A escolha foi pautada para o 2T2012 e 2T2022 para as Unidades Federativas (UFs) de maior e menor taxa de desemprego no segundo recorte temporal. A ideia por trás do trabalho é avaliar a evolução da desocupação mediante algumas categorias que possam sugerir maiores probabilidades do evento desemprego acontecer. Nessa linha, iremos avaliar Santa Catarina e a Bahia, cujas taxas de desocupação no 2T2022 foram 3,9% e 15,5%, respectivamente, em conjunto a características de raça, sexo e localização urbana ou rural. Dito isso, os modelos irão contemplar como variável explicativa um vetor binário de desemprego, sendo 1 pessoas ocupadas e 0 pessoas desocupadas, ao passo que as variáveis explicativas selecionadas para raça considerou brancos sendo 1 e não brancos 0 e para as demais mantivemos as categorias masculino ou feminino e urbano ou rural.
+
+### 1.31 Análise Descritiva
+
+Nesta seção será apresentado as informações descritivas e o comportamento das variáveis para as UFs e períodos.
+
+##### Santa Catarina 2T2012
+
+```{r, echo=FALSE, out.width= "70%"}
+
+summary(sc_1)
+plot_bar(sc_1)
+
+```
+
+##### Bahia 2T2012
+
+
+```{r, echo=FALSE, out.width= "70%"}
+
+summary(ba_1)
+plot_bar(ba_1)
+
+
+```
+
+##### Santa Catarina 2T2022
+
+```{r, echo=FALSE, out.width='100%'}
+
+summary(sc_2)
+plot_bar(sc_2)
+
+```
+
+##### Bahia 2T2022
+
+
+```{r, echo=FALSE, out.width= "70%"}
+
+summary(ba_2)
+plot_bar(ba_2)
+
+
+```
+
+No total, as amostras apresentaram uma queda no número de desempregados na ordem de 21 mil pessoas para SC e para BA uma alta de 53 mil pessoas. Quando olhamos para o sexo, em SC, temos que as mulheres registram uma queda de 27 mil pessoas desempregadas e homens uma alta de 6 mil pessoas, enquanto na BA as mulheres tiveram um incremento de 79 mil pessoas desocupadas e os homens uma queda de 26 mil. Pelo lado da localização, os desocupados da área rural de SC tiveram queda de 11 mil postos e na BA uma diminuição de 3 mil posto, ao mesmo tempo que na área urbana de SC a desocupação caiu em 1280 mil posto e na BA houve alta de 56 mil pessoas caindo no desemprego.   
+
+
+### 1.32 Modelos Logit 
+
+Para esta seção tomou-se o desemprego como variável explicativa e as demais como dependentes. Na sequência, como tais estimações podem sofrer com a influência de *outliers*, utilizou-se o método *Cook's Distance* para avaliar tal hipótese. Ao final, conlcuiu-se que os modelos não tiveram observações influentes, dado que nenhuma observação ultrapassou a linha de significância de 5%. Ademais, testou-se a possibilidade de multicolinearidade por meio do coeficiente de correlação de Pearson que, basicamente, pode ser entendido como um parâmetro que varia entre 1 e -1, sendo que, idealmente, ele deve estar abaixo de |0,8|. Para aplicação foi confirmado a ausência de multicolinearidade.
+
+##### Santa Catarina 2T2012
+
+```{r, echo=FALSE, out.width= "50%"}
+
+summary(logic_sc_1)
+
+plot(logic_sc_1, which = 5)
+
+pairs.panels(sc_1)
+
+```
+
+##### Bahia 2T2012
+
+```{r, echo=FALSE,out.width= "50%"}
+
+summary(logic_ba_1)
+
+plot(logic_ba_1, which = 5)
+
+pairs.panels(ba_1)
+```
+
+Para o segundo período, estimou-se os mesmo modelos e testes acima. No que se refere aos teste, eles apontam ausência de *outliers* e de multicolinearide.
+
+##### Santa Catarina 2T2022
+
+```{r, echo=FALSE, out.width= "50%"}
+
+summary(logic_sc_2)
+
+plot(logic_sc_2, which = 5)
+
+pairs.panels(sc_2)
+
+```
+  
+##### Bahia 2T2022
+
+
+```{r, echo=FALSE, out.width= "50%"}
+
+summary(logic_ba_2)
+
+plot(logic_ba_2, which = 5)
+
+pairs.panels(ba_2)
+
+```
+
+
+### Resultados
+
+Por fim, vamos calculou-se a razão de chances para os modelos e analisar os resultados.
+
+
+```{r, echo=FALSE, results='asis', warning=FALSE}
+
+odds <- cbind(exp(logic_sc_1$coefficients),
+               exp(logic_ba_1$coefficients),
+               exp(logic_sc_2$coefficients),
+               exp(logic_ba_2$coefficients)) %>% 
+  round(.,digits = 4) %>% 
+  as_tibble() %>% 
+  mutate(Coeficientes = c("Intercepto","Brancos","Sexo (Mulheres)","Local (Rural)")) %>% 
+  dplyr::select(Coeficientes,everything()) %>% 
+  rename(SC_1 = 2,
+         BA_1 = 3,
+         SC_2 = 4,
+         BA_2 = 5) 
+
+flextable(odds)
+
+
+
+```
+
+Para o 2T2012, temos que a razão de chances de pessoas brancas estarem empregadas em SC é de 87,7% maior que os não brancos, enquanto na BA a probabilidade é de 21,5%. Pelo lado geográfico, SC acusou que os trabalhadores da zona rural têm a sua probabilidade multiplicada por 1,93 para o evento ocupação em comparação a área urbana. Já na BA, tal chance cai para 1,22 de estarem empregados frente aos trabalhadores urbanos. No tocante ao sexo, SC registrou que ser mulher amplia em 0,56 as chances de estarem empregadas ou tem 43,4% menos chances que os homens. Para BA, tal resultado se reduz para 32,8% menos de chance.
+
+Quando se tratamos do 2T2022, no que se refere à raça, observamos dinâmicas diferentes entre as UFs. SC apresentou uma queda das chances de não brancos estarem empregados, enquanto a BA uma alta, porém, a probabilidade de os brancos estarem empregos seguem maiores no primeiro Estado. Geograficamente, as chances de estar na zonal rural e empregado em SC e na BA evoluíram, ainda assim, SC apresentou maior probabilidade de se estar fora da zona urbana e empregado que a UF nordestina. Finalmente, as chances de ser mulher em SC e estar empregada aumentou e na BA diminuiu, contudo, os homens seguem tendo maiores chances de emprego que as mulheres em ambas as UFs.
+
+
+
+
+### 1.33 Modelos Probit
+
+Nesta seção será apresentado os resultados dos modelos, cuja aplicação foi a mesma dos modelos logit, e para interpretação dos resultados foi adotado o método do efeito marginal médio para dos coeficientes. Por fim, como a aplicação contou com a mesma base de dados e o processo de estimação dos parâmetros é similar, verificou-se a ausência multicolinearidade e de pontos influêntes.
+
+##### Santa Catarina 2T2012
+
+```{r, echo=FALSE}
+
+summary(probit_sc_1)
+
+```
+
+##### Bahia 2T2012
+
+```{r, echo=FALSE}
+
+summary(probit_ba_1)
+
+```
+
+##### Santa Catarina 2T2022
+
+```{r, echo=FALSE}
+
+summary(probit_sc_2)
+
+```
+
+##### Bahia 2T2022
+
+```{r, echo=FALSE}
+
+summary(probit_ba_2)
+
+```
+
+### Resultados
+
+Os efeitos marginais médios calculados seguem na tabale abaixo:
+
+
+```{r, echo=FALSE, results='asis', warning=FALSE}
+
+marg_med <-
+  cbind(
+    mean(dnorm(predict(probit_sc_1, type = "link"))) * coef(probit_sc_1),
+    mean(dnorm(predict(probit_ba_1, type = "link"))) * coef(probit_ba_1),
+    mean(dnorm(predict(probit_sc_2, type = "link"))) * coef(probit_sc_2),
+    mean(dnorm(predict(probit_ba_2, type = "link")))*coef(probit_ba_2))%>% round(.,digits = 4) %>% 
+  as_tibble() %>% 
+  mutate(Coeficientes = names(probit_sc_1$coefficients)) %>% 
+  dplyr::select(Coeficientes,everything()) %>% 
+  rename(SC_1 = 2,
+         BA_1 = 3,
+         SC_2 = 4,
+         BA_2 = 5) 
+
+flextable(marg_med) %>% 
+  autofit()
+
+
+```
+
+A partir dos resultados, temos que, no primeiro período para SC e na média, o efeito marginal de ser branco e estar empregado é maior do que para os não brancos, assim como na BA, porém o efeito para o Estado é menor do que em SC. A mesma dinâmica se estende para quem vem da zona rural, com isso temos que em SC e na BA trabalhadores fora da zona urbana tem mais chances de estarem empregados, contudo, o efeito médio é maior para quem se encontrado no Estado sulista. Pelo lado do sexo, a dinâmica se inverte, ou seja, as mulheres, tem efeito na margem negativo de estarem empregadas nas UFs, sendo que na BA o efeito negativo é ainda maior do que em SC.
+
+Para o segundo período analisado, os efeitos marginais médio mantiveram o sentido com algumas diferenças frente aos 2T2012. Os brancos para SC reduziram suas chances de estarem empregados contra os não brancos, ao passo que para BA a probabilidade dos brancos estarem empregados teve ligeiro aumento. No tocante à geografia, tanto SC como BA apresentaram resultados maiores em relação ao período passado. Finalmente, para o sexo em SC a probabilidade das mulheres estarem empregadas melhorou, mas na BA a chance de ter um emprego frente aos homens diminuiu.
+
+
+# 2.Modelos Multinomiais
+
+Diferentemente dos modelos de resposta binária, os modelos multinomiais consideram como variável dependente informações categóricas, porém não ordenadas ou nominais. Em outras palavras, as repostas binárias podem somente considerar variáveis discretas com duas características, ao passo que o método multinomial considera variáveis discretas com mais de duas características. Ademais, outra divergência é a necessidade de modelos nominais apresentarem a independência de alternativas irrelevantes (IIA). Isto é, garantir que variáveis independentes apresentem os mesmos parâmetros estimados para as covariadas mediante a exclusão de alguma categoria das variáveis explicadas. Para tal, será feito o teste de Hausman-McFadden em que a hipótese nula considera a IIA. No mais, as propriedades dos métodos de modelagem logit e probit prevalecem em relação ao arcabouço de modelagem binária.
+
+## 2.1 Aplicação
+
+Para a seção em questão, tendo em vista a necessidade de aumentar a dimensão da variável dependente, foi escolhido as mesmas UFs e períodos da aplicação anterior, contudo, o exercício contemplou os microdados da PNAD referentes à renda total do trabalho, sexo e localização, sendo essa última uma dummy onde a zona urbana é 1 e a rural 0. Dito isto, tomou-se a renda como variável dependente, em que foi aplicado recortes para rendimentos abaixo 1000,00, rendimentos entre 1000,01 e 2500,00 e, por fim, rendimentos acima de 2500,01, sendo que tais recortes configuram as categorias 1, 2 e 3, respectivamente 
+
+### 2.11 Análise Descritiva
+
+##### Santa Catarina 2T2012
+
+```{r, echo=FALSE, out.width= "70%"}
+
+summary(msc_1)
+
+plot_histogram(msc_1)
+
+
+
+```
+```{r, echo=FALSE, out.width= "70%"}
+
+plot_bar(msc_1)
+
+
+```
+
+##### Bahia 2T2012
+
+```{r, echo=FALSE, out.width= "70%"}
+
+summary(mba_1)
+
+plot_histogram(mba_1)
+
+
+
+```
+
+```{r, echo=FALSE, out.width= "70%"}
+
+plot_bar(mba_1)
+
+
+```
+
+
+##### Santa Catarina 2T2022
+
+
+```{r, echo=FALSE, out.width= "70%"}
+
+summary(msc_2)
+
+plot_histogram(msc_2)
+
+
+```
+
+```{r, echo=FALSE, out.width= "70%"}
+
+plot_bar(msc_2)
+
+
+```
+
+
+##### Bahia 2T2022
+
+
+```{r, echo=FALSE, out.width= "70%"}
+
+summary(mba_2)
+
+plot_histogram(mba_2)
+
+
+
+```
+
+```{r, echo=FALSE, out.width= "70%"}
+
+plot_bar(mba_2)
+
+
+```
+
+O comportamento dos dados, para o primeiro período, aponta que a maioria dos indivíduos se concentram na primeira categoria de renda, sendo que para as demais categorias, SC apresenta maior frequência que a BA. Pelo lado da localização, ambas as UFs demonstraram maior concentração na área urbana, porém a BA acusou uma diferença menor de indivíduos entre as geografias. Enquanto, o gênero que mais apareceu na amostra foi o masculino com distribuição similar entre os Estados.
+
+Para o segundo período, temos que a 2ª categoria de renda é quem mais aparece na amostra, sendo que SC acusou mais indivíduos na 3º categoria que a BA, ao passo que o Estado nordestino teve uma distribuição semelhante entre as duas primeiras categorias. Para localização, a dinâmica das UFs permanece similar ao período passado, onde a BA apresenta mais indivíduos na área rural do que SC, porém a zona urbana segue com maior concentração para ambas. Finalmente, no tocante ao gênero, as mulheres em SC ganharam ligeira parcela de participação na amostra, ao passo que na BA a distribuição segue semelhante ao 2T2012.
+
+
+### 2.12 Modelos Logit
+
+Os resultados dos modelos se encontram abaixo. Além disso, para fins de avaliar a IIA, retirou-se a categoria 3 e aplicou-se o teste de Hausman-McFadden, sendo que ao final pudemos aceitar a hipótese nula de forma generalizada.
+
+##### Santa Catarina 2T2012
+```{r, echo=FALSE}
+
+summary(m_l_sc1)
+hmftest(m_l_sc1,m_teste_sc_1)
+
+
+```
+
+
+##### Bahia 2T2012
+
+```{r, echo=FALSE}
+
+summary(m_l_ba1)
+hmftest(m_l_ba1,m_teste_ba_1)
+```
+
+##### Santa Catarina 2T2022
+
+```{r, echo=FALSE}
+
+summary(m_l_sc2)
+hmftest(m_l_sc2,m_teste_sc_2)
+
+```
+
+
+##### Bahia 2T2022
+```{r, echo=FALSE}
+
+summary(m_l_ba2)
+hmftest(m_l_ba2,m_teste_ba_2)
+
+
+```
+
+
+
+### Resultados
+
+A seguir, temos a tabela com a razão de chances calculadas a partir da exponencialização dos coeficientes estimados dos modelos:
+
+```{r, echo=FALSE, results='asis', warning=FALSE}
+
+modds <- cbind(exp(m_l_sc1$coefficients),
+               exp(m_l_ba1$coefficients),
+               exp(m_l_sc2$coefficients),
+               exp(m_l_ba2$coefficients)) %>% 
+  round(.,digits = 4) %>% 
+  as_tibble() %>% 
+  mutate(Coeficientes = names(m_l_sc1$coefficients)) %>% 
+  dplyr::select(Coeficientes,everything()) %>% 
+  rename(SC_1 = 2,
+         BA_1 = 3,
+         SC_2 = 4,
+         BA_2 = 5) 
+
+flextable(modds) %>% 
+  autofit()
+
+
+
+```
+
+No que tange à interpretação dos resultados, primeiramente, vale ressaltar que todos os preditores apresentaram significância aos níveis de 1%, 5% e 10%, à exceção do intercepto do 2T2022 para SC na categoria 3. No mais, pelo lado das razões de chances calculadas, nota-se, de forma generalizada, que a chance de alguma covariada estar na faixa de renda 2 ou 3, dado um incremento de 1 unidade nos regressores, é sempre maior do que estar na faixa referente. Em outras palavras, para o 2T2012, temos que quando colocamos 1 homem a mais na amostra de SC a probabilidade dele estar na faixa 2 em relação a 1 é multiplicada em 2,6 e, em relação 3 frente 1, 3,5. Ademais, quando comparamos as duas UFs, verificou-se que o impacto do sexo masculino na probabilidade é sempre maior em SC do que na BA, para ambos os períodos, e que o efeito na probabilidade da área urbana é sempre maior na BA ante SC. Finalmente, é importante salientar que houve uma redução das chances quando olhamos para o 2T2022.
+
+
+# 3.Modelos de Contagem
+
+As variáveis aleatórias discretas podem apresentar a característica de contagem, uma vez que assumem somente valores positivos inteiros cuja incidência de zeros reflete a baixa probabilidade do evento ocorrer em conjunto a alta concentração de observações em valores específicos, bem como a grande heterocedasticidade que acelera a medida que nos aproximamos da média. Desta maneira, os métodos lineares não configuram uma boa opção de estimação para tais dados. O trabalho, por sua vez, pretende explorar os modelos de Poisson e Binomial Negativo
+
+## 3.1 Poisson
+
+O modelo em destaque pressupõe que a variável de interesse apresente média e variância idêntica, a equidisperção. A sua estimação é feita por meio da máxima verossimilhança, em que a parametrização busca a relação entre a média do processo de contagem e as covariadas independentes entre si. Após calcular as condições de primeira ordem da função de máxima verossimilhança, encontramos relações não lineares que serão resolvidas pelo algoritmo de Newton-Raphson.
+
+## 3.2 Binomial Negativa
+
+Quando estamos fora do mundo gaussiano muitas vezes a modelagem se depara com a sobredispersão de uma variável de contagem, tendo em vista a alta variância do processo gerador de dados. A resposta para esse tipo de problema surge, em grande medida, para métodos que envolvem o lado exponencial e funções de controle da variância. O modelo Binomial negativo se apresenta como um deles. Nesse sentido, quando a regressão de Poisson foge da equidispersão, a modelagem traz um elemento de controle para variância para assegurar uma robustez maior. 
+
+## 3.3 Aplicação
+
+Esta seção consiste em uma primeira estimação de Poisson para número de filhos até 14 anos(nfilhos014) versus anos de estudo (anos de estudos), renda do trabalho (rendtrabtot) e idade a partir dos microdados da PNAD para os mesmos períodos e UFs analisados anteriormente. Posteriormente, será feita uma regressão Binomial Negativo, dado os resultados de sobredispersão dos modelos de Poisson, e uma comparação entre os resultados dos métodos.
+
+### 3.31 Análise Descritiva
+
+Tal parte apresenta a distruição das variáveis, bem como as suas estatística em que a média  e a variância da variável de interesse estão indicadas pelos itens [1], respectivamente:
+
+```{r, echo=FALSE,warning=FALSE}
+
+po_sc_1 <- mpnad_1 %>%
+  filter(uf == "SC") %>% 
+  dplyr::select(nfilho014 ,idade  , anosest  , rendtrabtot)
+
+po_sc_2 <- mpnad_2 %>%
+  filter(uf == "SC") %>% 
+  dplyr::select(nfilho014 ,idade  , anosest  , rendtrabtot)
+
+po_ba_1 <- mpnad_1 %>%
+  filter(uf == "BA") %>% 
+  dplyr::select(nfilho014 ,idade  , anosest  , rendtrabtot)
+
+po_ba_2 <- mpnad_2 %>%
+  filter(uf == "BA") %>% 
+  dplyr::select(nfilho014 ,idade  , anosest  , rendtrabtot)
+
+
+```
+
+##### Santa Catarina 2T2012
+
+```{r, echo=FALSE,out.width= "70%",warning=FALSE}
+
+summary(po_sc_1)
+mean(po_sc_1$nfilho014)
+var(po_sc_1$nfilho014)
+plot_histogram(po_sc_1)
+
+```
+
+##### Bahia 2T2012
+
+```{r, echo=FALSE,out.width= "70%",warning=FALSE}
+summary(po_ba_1)
+mean(po_ba_1$nfilho014)
+var(po_ba_1$nfilho014)
+plot_histogram(po_ba_1)
+```
+
+##### Santa Catarina 2T2022
+
+```{r, echo=FALSE,out.width= "70%",warning=FALSE}
+summary(po_sc_2)
+mean(po_sc_2$nfilho014)
+var(po_sc_2$nfilho014)
+plot_histogram(po_sc_2)
+```
+
+##### Bahia 2T2022
+```{r, echo=FALSE,out.width= "70%",warning=FALSE}
+
+summary(po_ba_2)
+mean(po_ba_2$nfilho014)
+var(po_ba_2$nfilho014)
+plot_histogram(po_ba_2)
+
+```
+
+PAra 2T2012, os dados apontam que, na média, o número de filhos até 14 anos das duas UFs é semelhante, assim como a idade dos indivíduos. Contudo, pelo lado da escolaridade e dos rendimentos também na média, os dados acusam que SC tem uma concentração em números mais elevados do que a BA. 
+
+Para o segundo período em questão, temos que na média o número de filhos se reduziu para ambos os Estados, enquanto a idade na média aumentou, ainda que siga similar entre SC e BA. Já a escolaridade e os rendimentos, seguiram a mesma dinâmica anterior, porém ambas as UFs apresentaram avanços em suas médias. Por fim, vale ressaltar que de forma generalizada não houve equidispersão dos dados, sendo que a BA reduz consideravelmente a diferença entre média e variância para o 2º período.
+
+### 3.32 Modelos de Poisson
+
+A seguir segue o *output* dos modelos estimados, bem como a dispersão dos resíduos e os respectivos *fits*
+
+##### Santa Catarina 2T2012
+
+```{r, echo=FALSE,out.width= "70%"}
+mpo_sc_1 <-
+  glm(nfilho014 ~ idade  + anosest  + rendtrabtot ,
+      data = po_sc_1,
+      family = poisson(link = "log"))
+
+
+summary(mpo_sc_1)
+dispersiontest(mpo_sc_1)
+plot_density(residuals(mpo_sc_1))
+
+
+```
+
+##### Bahia 2T2012
+
+```{r, echo=FALSE,out.width= "70%"}
+
+mpo_ba_1 <-
+  glm(nfilho014 ~ idade  + anosest  + rendtrabtot ,
+      data = po_ba_1,
+      family = poisson(link = "log"))
+
+
+summary(mpo_ba_1)
+dispersiontest(mpo_ba_1)
+plot_density(residuals(mpo_ba_1))
+
+
+```
+
+##### Santa Catarina 2T2022
+
+```{r, echo=FALSE,out.width= "70%"}
+mpo_sc_2 <-
+  glm(nfilho014 ~ idade  + anosest  + rendtrabtot ,
+      data = po_sc_2,
+      family = poisson(link = "log"))
+
+
+summary(mpo_sc_2)
+dispersiontest(mpo_sc_2)
+plot_density(residuals(mpo_sc_2))
+
+
+
+```
+
+##### Bahia 2T2022
+```{r, echo=FALSE,out.width= "70%"}
+mpo_ba_2 <-
+  glm(nfilho014 ~ idade  + anosest  + rendtrabtot ,
+      data = po_ba_2,
+      family = poisson(link = "log"))
+
+
+summary(mpo_ba_2)
+dispersiontest(mpo_ba_2)
+plot_density(residuals(mpo_ba_2))
+
+
+```
+
+### 3.33 Modelos Binomial Negativa
+
+A seguir segue o *output* dos modelos estimados, bem como a dispersão dos resíduos e os respectivos *fits*
+
+##### Santa Catarina 2T2012
+
+```{r, echo=FALSE,out.width= "70%"}
+nb_sc_1 <- glm.nb(nfilho014 ~ idade  + anosest  + rendtrabtot ,
+                  data = po_sc_1)
+
+summary(nb_sc_1)
+plot_density(residuals(nb_sc_1))
+
+
+```
+
+##### Bahia 2T2012
+
+```{r, echo=FALSE,out.width= "70%"}
+
+nb_ba_1 <- glm.nb(nfilho014 ~ idade  + anosest  + rendtrabtot ,
+                  data = po_ba_1)
+
+summary(nb_ba_1)
+plot_density(residuals(nb_ba_1))
+
+
+```
+
+##### Santa Catarina 2T2022
+
+```{r, echo=FALSE,out.width= "70%"}
+
+nb_sc_2 <- glm.nb(nfilho014 ~ idade  + anosest  + rendtrabtot ,
+                  data = po_sc_2)
+
+summary(nb_sc_2)
+plot_density(residuals(nb_sc_2))
+
+
+
+```
+
+##### Bahia 2T2022
+
+
+```{r, echo=FALSE,out.width= "70%"}
+
+nb_ba_2 <- glm.nb(nfilho014 ~ idade  + anosest  + rendtrabtot ,
+                  data = po_ba_2)
+
+summary(nb_ba_2)
+plot_density(residuals(nb_ba_2))
+
+
+
+```
+
+
+### Resultados
+
+Como a interpretação é bem similar entre os modelos de Poisson e Binomial Negativa, cabe, primeiramente, comentar sobre a robustez de cada um e, assim, realizar uma análise sobre o método que melhor se adequou aos dados. Desta maneira, é sabido que as estimações de Binomial Negativa relaxam alguns pressupostos em relação a Poisson, no sentido de ignorar a sobredispersão dos resultados e gerar estimadores menos eficientes. O trabalho, por sua vez, optou por prevalecer com os modelos de menor *deviance* e melhor *fit* via  *rootogram* que, basicamente, demonstram a qualidade de previsão do modelo para cada ponto da variável, em que podemos pensar no *rootograma* como a relação entre as contagens ajustadas - se uma barra não atingir a linha zero, o modelo prediz uma determinada caixa de contagem e, se a barra exceder a linha zero, ela sob prevê. O *fit* para Poisson e Binomial Negativa, estão indicadas pelas variáveis mpo e nb, respectivamente, assim como os períodos 1 e 2 e a tabela de *deviance* na sequência para cada um deles.
+
+
+```{r, echo=FALSE, warning=FALSE, out.width= "70%"}
+
+par(mfrow = c(2, 2))
+
+countreg::rootogram(mpo_sc_1)
+countreg::rootogram(nb_sc_1)
+countreg::rootogram(mpo_ba_1)
+countreg::rootogram(nb_ba_1)
+
+dev_1 <- cbind(deviance(mpo_sc_1),deviance(nb_sc_1),
+                 deviance(mpo_ba_1),deviance(nb_ba_1)) %>% 
+  as_tibble() %>% 
+  rename(Poisson_SC = 1,
+         Binomial_SC = 2,
+         Poisson_BA = 3,
+         Binomial_BA = 4)
+
+flextable(dev_1) %>% 
+  autofit()
+
+
+par(mfrow = c(2, 2))
+
+countreg::rootogram(mpo_sc_2)
+countreg::rootogram(nb_sc_2)
+countreg::rootogram(mpo_ba_2)
+countreg::rootogram(nb_ba_2)
+
+dev_2 <- cbind(deviance(mpo_sc_2),deviance(nb_sc_2),
+                 deviance(mpo_ba_2),deviance(nb_ba_2)) %>% 
+  as_tibble() %>% 
+  rename(Poisson_SC = 1,
+         Binomial_SC = 2,
+         Poisson_BA = 3,
+         Binomial_BA = 4)
+
+flextable(dev_2) %>% 
+  autofit()
+
+
+
+```
+
+Em linhas gerais, observou-se que os modelos estimados pela Binomial Negativa apresentaram melhor acomodação dos dados e menor *deviance*. Sendo assim, o trabalho seguiu com seus resultados e a tabela de razão de chances calculadas a partir da exponencialização dos coeficientes dos modelos segue abaixo.
+
+
+```{r, echo=FALSE, warning=FALSE}
+
+
+bnodds <- cbind(exp(nb_sc_1$coefficients),
+               exp(nb_ba_1$coefficients),
+               exp(nb_sc_2$coefficients),
+               exp(nb_ba_2$coefficients)) %>% 
+  round(.,digits = 4) %>% 
+  as_tibble() %>% 
+  mutate(Odds = names(nb_sc_1$coefficients)) %>% 
+  dplyr::select(Odds,everything()) %>% 
+  rename(SC_1 = 2,
+         BA_1 = 3,
+         SC_2 = 4,
+         BA_2 = 5) 
+
+flextable(bnodds) %>% 
+  autofit()
+
+
+```
+
+Os resultados dos parâmetros exponencializados apontam, para idade e escolaridade, que à medida que eles avançam a probabilidade de se ter um filho até 14 anos é menor, isso para ambas as UFs nos dois recortes temporais. Enquanto a renda, por mais que tenha apresentado significância para todos os níveis testados, não gera influências na razão de chances do evento. Por fim, a leitura dos resultados sugere que a decisão de ter filhos pouco mudou depois de 10 anos e que a geografia quase não interferem no processo de decisão.
+
+
+
+##### Referências
+
+* Cameron, A. C. and P. K. Trivedi (2005), Microeconometrics: Methods and 
+Applications, Cambridge University Press, New York, Chapters 14-16
+
+
+

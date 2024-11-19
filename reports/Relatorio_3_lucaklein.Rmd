@@ -1,0 +1,711 @@
+---
+title: "Relatório 3"
+author: "Luca Klein"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+#Packs
+library(readr)
+library("sampleSelection")
+library(DataExplorer)
+library("VGAM")
+library(AER)
+library("GGally")
+library(lmtest)
+library(quantreg)
+library("mhurdle")
+library(stargazer)
+library(pscl)
+library(countreg)
+library(censReg)
+library(tidyverse)
+library(janitor)
+library(flextable)
+# Funções
+cod_uf <- function(x) {
+  x <- x %>%
+    mutate(
+      uf = case_when(
+        uf == 11 ~ "RO",
+        uf ==  12 ~	"AC",
+        uf ==  13 ~	"AM",
+        uf ==  14 ~	"RR",
+        uf ==  15	~ "PA",
+        uf ==  16	~ "AP",
+        uf ==  17 ~	"TO",
+        uf == 21 ~	"MA",
+        uf == 22 ~	"PI",
+        uf == 23 ~	"CE",
+        uf == 24 ~	"RN",
+        uf == 25 ~	"PB",
+        uf == 26 ~	"PE",
+        uf == 27 ~	"AL",
+        uf == 28 ~	"SE",
+        uf == 29 ~	"BA",
+        uf == 31 ~	"MG",
+        uf == 32 ~	"ES",
+        uf == 33 ~	"RJ",
+        uf == 35 ~	"SP",
+        uf == 41 ~	"PR",
+        uf ==  42 ~	"SC",
+        uf ==  43 ~	"RS",
+        uf ==  50 ~	"MS",
+        uf ==  51 ~	"MT",
+        uf == 52 ~	"GO",
+        uf == 53 ~	"DF",
+        
+      )
+
+    )
+}
+
+sex_change <- function(x){
+  
+  x <- x %>% 
+    mutate(sexo = case_when(sexo == 0 ~ "feminino",
+                            sexo == 1 ~ "masculino"))
+}
+
+# Dados
+pnad_1 <- read_csv("C:/Users/Luca Klein/Documents/UFMG/materias/2_semestre/microeconometria/application/data/PNADC_022012_resumida.csv")
+
+pnad_2 <- read_csv("C:/Users/Luca Klein/Documents/UFMG/materias/2_semestre/microeconometria/application/data/PNADC_022022_resumida.csv")
+
+
+
+```
+
+# 1. Modelos Tobit
+
+## 1.1 Tobit
+
+As regressões lineares muitas vezes se deperam com problemas de amostragem, sendo censura e truncagem alguns deles. A definição de truncagem é dada pela ausência de observações nas variáveis explicativas e na explicada, ao passo que a censura demonstra a falta de dados somente para variáveis dependentes. Para o tratamento da problemática de censura, temos o modelo de Tobin (1958) conhecido como Tobit ou regressão normal censurada. Quando nos deparamos com a censura a utilização do método Mínimos Quadrados Ordinários (MQO) não chega em resultados com estimadores consistentes, tendo em vista que a amostra não trás valores suficientes para estimação dos verdadeiros valores populacionais. Para evitar esse tipo de erro, o Tobit assume algumas propriedades como a gaussianidade dos resíduos com média zero e variância constante e, pelo lado da variável latente, temos que sua distribuição é normal , com média X'$\beta$ e $\sigma^2$, e seus valores devem ser positivos, caso contrário, ela não existe.
+
+ 
+### 1.11 Aplicação
+
+Para estimação dos modelos foi selecionado dois Estados nos períodos do 2T2012 e do 2T2022, a partir do microdados da PNAD. O modelo considerou como variável dependente as horas de trabalho (horastrab) e como explicativas as variáveis anos de estudos (anosest), idade e sexo. Por fim, a escolha das unidades federativas (UFs) foi pautada na média de horas habitualmente trabalhadas por semana no trabalho principal das pessoas de 14 anos ou mais de idade, em que foi selecionado São Paulo (SP) e Piauí (PI), em virtude dessas UFs apresentarem a maior e a menor média de horas de trabalho, respectivamente, segundo a PNAD do 2T2012.
+
+
+### 1.12 Análise Descritiva
+
+```{r, echo=FALSE}
+
+# Dataset
+
+t_sp_1 <- pnad_1 %>% 
+  dplyr::select(UF,horastrab,sexo,anosest,idade) %>%
+  clean_names() %>% 
+  cod_uf() %>% 
+  sex_change() %>% 
+  filter(uf == "SP") %>% 
+  dplyr::select(-uf)
+  
+t_pi_1 <- pnad_1 %>% 
+dplyr::select(UF,horastrab,sexo,anosest,idade) %>%
+  clean_names() %>% 
+  cod_uf() %>% 
+  sex_change() %>% 
+  filter(uf == "PI") %>% 
+  dplyr::select(-uf)
+
+
+t_sp_2 <- pnad_2 %>% 
+dplyr::select(UF,horastrab,sexo,anosest,idade) %>%
+  clean_names() %>% 
+  cod_uf() %>% 
+  sex_change() %>% 
+  filter(uf == "SP") %>% 
+  dplyr::select(-uf)
+
+t_pi_2 <- pnad_2 %>% 
+dplyr::select(UF,horastrab,sexo,anosest,idade) %>%
+  clean_names() %>% 
+  cod_uf() %>% 
+  sex_change() %>% 
+  filter(uf == "PI") %>% 
+  dplyr::select(-uf)
+
+
+
+
+
+```
+
+Nesta seção será apresentado as informações descritivas e o comportamento das variáveis para as UFs e períodos.
+
+##### São Paulo 2T2012
+
+```{r, echo=FALSE, warning=FALSE ,out.width= "70%"}
+
+summary(t_sp_1)
+
+plot_missing(t_sp_1)
+
+ggpairs(t_sp_1, ggplot2::aes(colour=sexo))
+
+
+```
+
+
+##### Piauí 2T2012
+
+```{r, echo=FALSE, warning=FALSE,out.width= "70%"}
+summary(t_pi_1)
+
+plot_missing(t_pi_1)
+
+ggpairs(t_pi_1, ggplot2::aes(colour=sexo))
+```
+
+##### São Paulo 2T2022
+
+```{r, echo=FALSE, warning=FALSE,out.width= "70%"}
+
+summary(t_sp_2)
+
+plot_missing(t_sp_2)
+
+ggpairs(t_sp_2, ggplot2::aes(colour=sexo))
+
+
+```
+
+
+##### Piauí 2T2022
+
+```{r, echo=FALSE, warning=FALSE,out.width= "70%"}
+summary(t_pi_2)
+
+plot_missing(t_pi_2)
+
+ggpairs(t_pi_2, ggplot2::aes(colour=sexo))
+```
+
+Para o primeiro período selecionado, os dados apontam que SP apresentou, na média, estatísticas superiores às do PI para horas de trabalho, anos de estudo e idade. Em termos de correlação cruzada, o sexo feminino e masculino para SP acusaram impactos diferentes da escolaridade para horas de trabalho, sendo o primeiro deles positivo e o segundo negativo. Enquanto a idade sugeriu uma dinâmica inversa, em que as mulheres impactam negativamente as horas ofertadas e os homens positivamente. Para o PI, as correlações dos gêneros demonstraram influências positivas da escolaridade para horas de trabalho, sendo as mulheres aquelas com o maior impacto. Por outro lado, no que se refere a idade, a relação com as horas de trabalho segue a dinâmica de SP, em que à medida que idade avança, na média, as mulheres tendem a ter um impacto negativo para as horas de trabalho e homens positivo.
+
+No 2T2022, as variáveis aleatórias contínuas para SP mantiveram-se a com média mais elevada em comparação as do PI. Em linhas gerais, as horas ofertadas caíram para as duas UFS, ao mesmo tempo que a escolaridade aumentou para ambas, assim como a idade. Pelo lado da correlação cruzada, o impacto médio da escolaridade dos gêneros para horas de trabalho se manteve com dinâmica semelhante ao primeiro período para ambas as UFs. Quanto as influências da idade dos sexos para as horas de trabalho, o período apontou para SP impactos negativos de homens e mulheres, enquanto o PI inverteu a dinâmica do 2T2012, agora as mulheres tendem a ter um impacto médio positivo para horas ofertas e os homens negativos. Por fim, em termos de dados censurados, o PI acusou maior censura que SP em ambos os períodos com maior porcentagem de dados faltantes no segundo recorte de tempo selecionado e SP teve pequena redução na censura frente ao primeiro período.
+
+
+### 1.13 Modelo
+
+```{r, echo=FALSE,warning=FALSE,out.width= "70%"}
+tobit_sp_1 <- tobit(horastrab ~ sexo + idade + anosest,
+                   data = t_sp_1)
+
+tobit_sp_2 <- tobit(horastrab ~ sexo + idade + anosest,
+                   data = t_sp_2)
+
+
+tobit_pi_1 <- tobit(horastrab ~ sexo + anosest,
+                    data = t_pi_1)
+
+tobit_pi_2 <- tobit(horastrab ~ sexo + anosest,
+                    data = t_pi_2)
+
+
+
+```
+
+
+Os *outputs* dos modelos seguem abaixo, bem como a avaliação de resíduos em termos de média, indicados por [1], e variância:
+
+##### São Paulo 2T2012
+
+```{r, echo=FALSE,warning=FALSE,out.width= "70%"}
+
+summary(tobit_sp_1)
+mean(residuals(tobit_sp_1))
+plot_histogram(residuals(tobit_sp_1))
+
+
+```
+
+
+##### Piauí 2T2012
+
+```{r, echo=FALSE,warning=FALSE,out.width= "70%"}
+
+summary(tobit_pi_1)
+mean(residuals(tobit_pi_1))
+plot_histogram(residuals(tobit_pi_1))
+
+
+```
+
+##### São Paulo 2T2022
+
+```{r, echo=FALSE,warning=FALSE,out.width= "70%"}
+
+summary(tobit_sp_2)
+mean(residuals(tobit_sp_2))
+plot_histogram(residuals(tobit_sp_2))
+
+
+```
+
+##### Piauí 2T2022
+
+```{r, echo=FALSE,warning=FALSE,out.width= "70%"}
+
+summary(tobit_pi_2)
+mean(residuals(tobit_pi_2))
+plot_histogram(residuals(tobit_pi_2))
+
+
+```
+
+De modo geral, os modelos atendem, em certa medida, os pressupostos básicos dos resíduos com média nula e variância constante. No entanto, ainda que bem comportada em alguns pontos, a variância não apresenta um comportamento homocedástico, algo que pode ser explicado pela grande quantidade de zeros nas horas de trabalho, o método Double Hurdle que será utilizado na próxima secção deve corrigir isso e modelar os zeros a partir da Binomial Negativa.
+
+##### Resultados
+
+```{r, echo=FALSE, warning=FALSE}
+
+marg <- cbind(tobit_sp_1$coefficients,
+               tobit_pi_1$coefficients,
+               tobit_sp_2$coefficients,
+               tobit_pi_2$coefficients) %>% 
+  as_tibble() %>% 
+  round(.,digits = 4) %>% 
+  mutate(Coeficientes = names(tobit_sp_1$coefficients)) %>% 
+  dplyr::select(Coeficientes,everything()) %>% 
+  rename(SP_1 = 2,
+         PI_1 = 3,
+         SP_2 = 4,
+         PI_2 = 5) 
+
+flextable(marg) %>% 
+  autofit()
+```
+No que tange aos resultados, os coeficientes estimados devem ser interpretados como efeito marginal. Logo, para o primeiro período, temos que o impacto marginal do sexo masculino é maior para PI frente a SP, assim como a escolaridade e a idade que apresentaram efeitos marginais negativos para horas de oferta de trabalho para os paulistas. Quanto ao segundo período, pelo lado do gênero, as UFs apontaram uma redução das influências marginais, sendo a do PI maior do que de SP. Já a idade seguiu a dinâmica do 2T2012, mas com ligeiras diferenças para horas de trabalho na margem. Já a escolaridade, para SP, inverteu-se o impacto na margem e PI seguiu com um efeito similar ao do primeiro recorte de tempo. 
+
+## 1.2 Double Hurdle
+
+A abordagem proposta por Cragg (1971) é uma generalização do modelo de Tobin (1958), sendo esse um método de classificação da amostra em termos de participação de alguma atividade, tendo em vista que sua motivação parte da necessidade de modelar valores nulos presentes nas variáveis, algo que muitas vezes não é tratado em certos tipos de modelos. Nessa linha, para tomar a participação de atividades é cabível a utilização, no primeiro momento, da estimação de um Probit ou Logit e, no segundo momento, a fim de garantir que os participantes assumam somente valores positivos, temos que estimar sua densidade, sendo essa a configuração dos dois estágios do modelo. Finalmente, depois calcular os dois estágios, o método permite a estimação das proporções populacionais das categorias segundo as características imputadas nas variáveis independentes.
+
+### 1.21 Aplicação
+
+Para estimação do modelo Double Hurdle foi selecionado dois Estados nos períodos do 2T2012 e do 2T2022, a partir do microdados da PNAD. O modelo considerou como variável dependente as horas de trabalho (horastrab) e como explicativas as variáveis anos de estudos (anosest), idade e sexo. Vale ressaltar que para variável explicada introduziu -se o valor zero nas observações sem valor. Por fim, a escolha das unidades federativas (UFs) foi pautada na média de horas habitualmente trabalhadas por semana no trabalho principal das pessoas de 14 anos ou mais de idade, em que foi selecionado São Paulo (SP) e Piauí (PI), em virtude dessas UFs apresentarem a maior e a menor média de horas de trabalho, respectivamente, também segundo a PNAD do 2T2012.
+
+### 1.22 Análise Descritiva
+
+```{r, echo=FALSE}
+
+h_sp_1 <- t_sp_1 %>% 
+  mutate_at(vars(horastrab), ~replace(., is.na(.), 0))
+
+h_sp_2 <- t_sp_2 %>% 
+  mutate_at(vars(horastrab), ~replace(., is.na(.), 0))
+
+h_pi_1 <- t_pi_1 %>% 
+  mutate_at(vars(horastrab), ~replace(., is.na(.), 0))
+
+h_pi_2 <- t_pi_2 %>% 
+  mutate_at(vars(horastrab), ~replace(., is.na(.), 0))
+
+
+```
+
+Nesta seção será apresentado as informações descritivas e o comportamento das variáveis para as UFs e períodos.
+
+##### São Paulo 2T2012
+
+```{r, echo=FALSE, warning=FALSE,out.width= "70%"}
+
+summary(h_sp_1)
+ggpairs(h_sp_1, ggplot2::aes(colour=sexo))
+
+```
+
+##### Piauí 2T2012
+
+```{r, echo=FALSE, warning=FALSE,out.width= "70%"}
+
+summary(h_pi_1)
+ggpairs(h_pi_1, ggplot2::aes(colour=sexo))
+
+```
+
+
+##### São Paulo 2T2022
+
+```{r, echo=FALSE, warning=FALSE,out.width= "70%"}
+
+summary(h_sp_2)
+ggpairs(h_sp_2, ggplot2::aes(colour=sexo))
+
+```
+
+##### Piauí 2T2022
+
+```{r, echo=FALSE, warning=FALSE, out.width= "70%"}
+
+summary(h_pi_2)
+ggpairs(h_pi_2, ggplot2::aes(colour=sexo))
+
+```
+
+Para o primeiro período, nota-se que que a média de horas de trabalho para SP é superior em 6 horas, ao passo que no 2T2022 tal distância se mantém, contudo, há uma redução nas horas para ambas as UFs. Quando observamos os anos de estudo, verificou-se que SP apresenta uma média mais elevada que PI para ambos os períodos e que houve uma evolução para os Estados no segundo período em comparação ao primeiro. O indicador de idade também sugere uma média mais elevada para SP em relação ao PI para as duas épocas em questão. No que tange à correlação entre as variáveis, nota-se, de maneira generalizada, que na média as mulheres são quem mais afetam a oferta de horas de trabalho à medida a escolaridade cresce. Por outro lado, também de forma generalizada, o impacto da idade para as horas de trabalho é superior para homens frente as mulheres, na média.
+
+### 1.23 Modelo
+
+
+```{r, echo=FALSE}
+
+d_sp_1 <- hurdle(horastrab ~ sexo + idade + anosest,
+                 data = h_sp_1)
+
+d_pi_1 <- hurdle(horastrab ~ sexo + idade + anosest,
+                 data = h_pi_1)
+
+d_sp_2 <- hurdle(horastrab ~ sexo + idade + anosest,
+                 data = h_sp_2)
+
+d_pi_2 <- hurdle(horastrab ~ sexo + idade + anosest,
+                 data = h_pi_2)
+
+
+```
+
+
+Os *outputs* dos modelos seguem abaixo, bem como o *fit* de cada um:
+
+##### São Paulo 2T2012
+
+
+```{r, echo=FALSE,,warning=FALSE,out.width= "70%"}
+
+summary(d_sp_1)
+rootogram(d_sp_1)
+
+
+```
+
+
+
+##### Piauí 2T2012
+
+```{r, echo=FALSE,warning=FALSE,out.width= "70%"}
+
+summary(d_pi_1)
+rootogram(d_pi_1)
+
+```
+
+
+##### São Paulo 2T2022
+
+
+```{r, echo=FALSE,warning=FALSE,out.width= "70%"}
+
+summary(d_sp_2)
+rootogram(d_sp_2)
+
+
+```
+
+
+##### Piauí 2T2022
+
+```{r, echo=FALSE,warning=FALSE,out.width= "70%"}
+
+summary(d_pi_2)
+rootogram(d_pi_2)
+
+```
+
+##### Resultados
+
+```{r, echo=FALSE, warning=FALSE}
+
+count_odds <- cbind(exp(d_sp_1$coefficients$count),
+               exp(d_pi_1$coefficients$count),
+               exp(d_sp_2$coefficients$count),
+               exp(d_pi_2$coefficients$count)) %>% 
+  round(.,digits = 4) %>% 
+  as_tibble() %>% 
+  mutate(Odds = names(d_sp_1$coefficients$count)) %>% 
+  dplyr::select(Odds,everything()) %>% 
+  rename(SP_1 = 2,
+         PI_1 = 3,
+         SP_2 = 4,
+         PI_2 = 5) 
+
+flextable(count_odds) %>% 
+  autofit()
+
+
+
+
+```
+
+Primeiramente, os modelos Double Hurdle apresentam *outputs* no formato de regressão de Poisson para atividades diferentes de zero e no formato Binomial Negativa para atividade zero. Nesse sentido, a interpretação dos resultados é dada pela exponencialização dos coeficientes estimados, sendo eles uma razão de chances. Logo, para valores acima de 1, temos uma maior probabilidade do evento horas de trabalho acontecer e tomamos o sexo masculino como referência.
+
+Para valores positivos no 2T2012, temos que o sexo masculino tem maiores chances de ofertar horas de trabalho frente as mulheres e que para o PI essa probabilidade é maior do que para SP. Na medida que a idade avança e com maior escolaridade, as mulheres tendem a ofertar mais horas que homens em SP, ao mesmo tempo que para o PI tal dinâmica se inverte, são os homens que trabalham mais. 
+
+Quando se trata do segundo período, note-se uma redução na chance de oferta de horas para homens em SP e PI, sendo que a probabilidade para o PI se manteve acima da paulista. Para idade, a dinâmica foi semelhante, ambas as UFs acusaram uma ligeira queda nas chances e o PI segue com probabilidade maiores que SP. No que se refere aos anos de estudo, para SP houve uma inversão na probabilidade, nesse período a chance dos homens apresentarem mais horas ofertadas superou as chances das mulheres, enquanto o PI manteve a maior probabilidade para homens e seguiu acima de SP. 
+
+Ademais, em termos validação do modelo, utilizou-se o *rootogram* que, basicamente, demonstra a qualidade de previsão do modelo para cada ponto da variável, em que podemos pensar no *rootogram* como a relação entre as contagens ajustadas - se uma barra não atingir a linha zero, o modelo prediz uma determinada caixa de contagem e, se a barra exceder a linha zero, ela sob prevê. Nesse sentido, a alta frequência de zeros em todos os modelos indicaram uma sob previsão, ao passo que para as demais contagens os valores foram sub previsto, porém, com erros mais comportados.
+
+
+
+
+```{r, echo=FALSE, warning=FALSE}
+
+zero_odds <- cbind(exp(d_sp_1$coefficients$zero),
+               exp(d_pi_1$coefficients$zero),
+               exp(d_sp_2$coefficients$zero),
+               exp(d_pi_2$coefficients$zero)) %>% 
+  round(.,digits = 4) %>% 
+  as_tibble() %>% 
+  mutate(Odds = names(d_sp_1$coefficients$zero)) %>% 
+  dplyr::select(Odds,everything()) %>% 
+  rename(SP_1 = 2,
+         PI_1 = 3,
+         SP_2 = 4,
+         PI_2 = 5) 
+
+flextable(zero_odds) %>% 
+  autofit()
+
+
+
+
+```
+
+
+Pelo lado dos resultados nulos, o primeiro período acusou de forma generalizada que os homens tem maiores chances de não ofertarem horas de trabalho que as mulheres. Tal probabilidade é maior no primeiro período, contudo, o PI apresenta uma redução significativa para o 2T2022. No mais, o PI supera SP nos dois períodos para idade, com ligeira redução de chances no 2T2022. Enquanto SP supera o PI na escolaridade, com pequeno avanço nas chances para ambos os Estados.
+
+# 2. Modelos de correção de seleção amostral
+
+## 2.1 Modelo de Heckman
+
+Os modelos estimados via MQO muitas vezes sofrem de viés amostral e/ou da omissão de regressores relevantes, algo que viola os pressupostos de Gauss-Markov e, com isso, temos que os estimadores da regressão não são BLUE (Best Linear Unbiased Estimator), dado a inconsistência deles. Desta maneira, o modelo em dois estágios de Heckman é uma opção para contornar tais problemas, uma vez que incluímos uma equação adicional que liga as covariadas de interesse com a equação principal. Sendo assim, a ideia central do estimador Heckit é que os fatores não observáveis irão afetar tanto a variável de interesse quanto as probabilidades de seleção amostral, tendo em vista que tais informações devem estar contidas no resíduo da equação de seleção. Logo, a estimação consiste, em seu primeiro estágio, a modelagem via Probit para encontrar o valor esperado dos resíduos de seleção da parte não observável e, no segundo estágio, deve ser feita uma estimação via MQO com os resíduos estimados no primeiro estágio, para que assim seja possível encontrar estimadores consistentes.
+
+### 2.11 Aplicação
+
+Para tal método utilizou-se os microdados da PNAD para os mesmos períodos das aplicações acima e para duas UFs. A motivação por trás do modelo surge para tentar estimar a renda daqueles que não trabalham, vulgo salário de reserva, uma vez que a renda é representada na amostra por aqueles que trabalham e os demais são subrepresentados. Para tal, o primeiro estágio foi estimado a partir de um vetor binário que explicita quem trabalha por 1 e quem não trabalha por 0, onde assumiu-se quem trabalha aquele cuja renda era diferente de zero, e como covariadas incluiu-se os anos de estudo (anosest), idade e número de filhos (nfilhotot). Para o segundo estágio, estimou-se o logaritmo da renda contra os anos de estudo e idade. Para efeitos de comparação, foi estimado o mesmo modelo do segundo estágio por meio dos Mínimos Quadrados Ordinários. Por fim, a escolha das UFs foi pautada no rendimento médio real do trabalho principal, efetivamente recebido no mês, para o maior e menor valor recebido no 2T2012, sendo assim os modelos são referentes a São Paulo (SP) e Maranhão (MA)
+
+### 2.12 Análise Descritiva
+
+
+```{r, echo=FALSE, warning=FALSE}
+
+h_df_1 <- pnad_1 %>% 
+  dplyr::select(UF,rendtrabprinc,idade,anosest,nfilhotot) %>% 
+  clean_names() %>% 
+  mutate(renda = rendtrabprinc) %>% 
+  cod_uf() %>% 
+  filter(uf == "SP") %>% 
+  dplyr::select(-1) %>% 
+  mutate_at(vars(rendtrabprinc), ~ replace(., is.na(.), 0)) %>% 
+  mutate(trab = ifelse(rendtrabprinc == 0, 0,1))  %>% 
+  dplyr::select(-rendtrabprinc)
+
+
+
+
+h_ma_1 <- pnad_1 %>% 
+  dplyr::select(UF,rendtrabprinc,idade,anosest,nfilhotot) %>% 
+  clean_names() %>% 
+  mutate(renda = rendtrabprinc) %>% 
+  cod_uf() %>% 
+  filter(uf == "MA") %>% 
+  dplyr::select(-1) %>% 
+  mutate_at(vars(rendtrabprinc), ~ replace(., is.na(.), 0)) %>% 
+  mutate(trab = ifelse(rendtrabprinc == 0, 0,1))  %>% 
+  dplyr::select(-rendtrabprinc)
+
+
+h_df_2 <- pnad_2 %>% 
+  dplyr::select(UF,rendtrabprinc,idade,anosest,nfilhotot) %>% 
+  clean_names() %>% 
+  mutate(renda = rendtrabprinc) %>% 
+  cod_uf() %>% 
+  filter(uf == "SP") %>% 
+  dplyr::select(-1) %>% 
+  mutate_at(vars(rendtrabprinc), ~ replace(., is.na(.), 0)) %>% 
+  mutate(trab = ifelse(rendtrabprinc == 0, 0,1))  %>% 
+  dplyr::select(-rendtrabprinc)
+
+
+
+
+h_ma_2 <- pnad_2 %>% 
+  dplyr::select(UF,rendtrabprinc,idade,anosest,nfilhotot) %>% 
+  clean_names() %>% 
+  mutate(renda = rendtrabprinc) %>% 
+  cod_uf() %>% 
+  filter(uf == "MA") %>% 
+  dplyr::select(-1) %>% 
+  mutate_at(vars(rendtrabprinc), ~ replace(., is.na(.), 0)) %>% 
+  mutate(trab = ifelse(rendtrabprinc == 0, 0,1))  %>% 
+  dplyr::select(-rendtrabprinc)
+
+
+
+```
+
+Nesta seção será apresentado as informações descritivas e o comportamento das variáveis para as UFs e períodos.
+
+##### São Paulo 2T2012
+
+```{r, echo=FALSE, warning=FALSE,out.width= "70%"}
+
+summary(h_df_1)
+plot_histogram(h_df_1)
+
+```
+
+##### Maranhão 2T2012
+
+```{r, echo=FALSE ,warning=FALSE,out.width= "70%"}
+
+summary(h_ma_1)
+plot_histogram(h_ma_1)
+
+```
+
+
+##### São Paulo 2T2022
+
+```{r, echo=FALSE,warning=FALSE,out.width= "70%"}
+
+summary(h_df_2)
+plot_histogram(h_df_2)
+
+```
+
+##### Maranhão 2T2022
+
+```{r, echo=FALSE,warning=FALSE,out.width= "70%"}
+
+summary(h_ma_2)
+plot_histogram(h_ma_2)
+
+```
+
+Com relação ao primeiro período, temos que as variáveis aleatórias para SP, na média, apresentaram números maiores do que o MA, com exceção ao número de filhos cujo valor médio é idêntico. Pelo lado categórico, aqueles que não trabalham representaram 52,7% e 68,6% das amostras de SP e do MA, respectivamente. Para o segundo período analisado, temos que a dinâmica passada se manteve, ou seja, as variáveis aleatórias na média apresentaram valores maiores para SP em comparação ao MA, à exceção do número de filhos. No tocante à parte dicotômica, a proporção dos que não trabalham em SP caiu para 51,4% da amostra e no MA aumentou para 69,2%.
+
+### 2.13 Modelo
+
+
+```{r, echo=FALSE}
+
+ols_ma_1 <- lm(log(renda) ~ idade + anosest  ,
+               data = h_ma_1)
+
+heck_ma_1 <- selection(trab ~ idade + anosest + nfilhotot,
+                       log(renda) ~ idade + anosest ,
+                       method = "2step",
+                       data = h_ma_1)
+
+
+ols_df_1 <- lm(log(renda) ~ idade + anosest  ,
+               data = h_df_1)
+
+heck_df_1 <- selection(trab ~ idade + anosest + nfilhotot,
+                       log(renda) ~ idade + anosest ,
+                       method = "2step",
+                       data = h_df_1)
+
+ols_ma_2 <- lm(log(renda) ~ idade + anosest  ,
+               data = h_ma_2)
+
+heck_ma_2 <- selection(trab ~ idade + anosest + nfilhotot,
+                       log(renda) ~ idade + anosest ,
+                       method = "2step",
+                       data = h_ma_2)
+
+
+ols_df_2 <- lm(log(renda) ~ idade + anosest  ,
+               data = h_df_2)
+
+heck_df_2 <- selection(trab ~ idade + anosest + nfilhotot,
+                       log(renda) ~ idade + anosest ,
+                       method = "2step",
+                       data = h_df_2)
+
+
+
+```
+
+
+Os *outputs* dos modelos seguem abaixo, bem como a comparação com os respectivos modelos estimados somente via MQO:
+
+##### São Paulo 2T2012
+
+```{r, echo=FALSE, warning=FALSE,out.width= "70%"}
+
+summary(heck_df_1)
+
+stargazer(ols_df_1, heck_df_1, type = "text")
+
+
+```
+
+##### Maranhão 2T2012
+
+```{r, echo=FALSE ,warning=FALSE,out.width= "70%"}
+
+summary(heck_ma_1)
+
+stargazer(ols_ma_1, heck_ma_1, type = "text")
+
+
+```
+
+
+##### São Paulo 2T2022
+
+```{r, echo=FALSE,warning=FALSE,out.width= "70%"}
+
+summary(heck_df_2)
+
+stargazer(ols_df_2, heck_df_2, type = "text")
+
+```
+
+##### Maranhão 2T2022
+
+```{r, echo=FALSE,warning=FALSE,out.width= "70%"}
+
+summary(heck_ma_2)
+
+stargazer(ols_ma_2, heck_ma_2, type = "text")
+
+
+```
+
+
+##### Resultados
+
+```{r, echo=FALSE, warning=FALSE}
+
+stargazer(heck_df_1, heck_ma_1,heck_df_2,heck_ma_2 ,type = "text",
+          column.labels = c("SP 1", "MA 1","SP 2","MA 2"))
+
+
+
+
+```
+
+Os valores acima correspondem as estimações do 2º estágio e, primeiramente, cabe cometar sobre o nível de significância da inversa de Mills. O fator de ajuste de Mills, basicamente, é calculado a partir da estimação do 1º estágio quando existe correlação entre os dados observáveis e não observáveis, nesse sentido a inversa de Mills entra como fator de correção da heterocedasticidade no 2º estágio e produz estimadores consistentes e eficientes. Portando, quando aceitamos a hipótese nula do teste T-student para a inversa de Mills entende-se que o modelo não sofre de viés amostral. No que tange aos resultados, o modelo para SP_2 acusou que não há viés de seleção, sendo assim ele perde o efeito de comparação com os demais modelos acima. O modelo estimado via MQO seria uma opção para o exercício, porém os valores dos parâmetros parecem divergir consideravelmente, isso em relação ao modelo do primeiro período, para tirar qualquer *insight*, além de que nenhuma validação do modelo foi feita, por conta disso, o trabalho descartou o uso dele.
+
+A interpretação dos resultados é feita por meio de semi-elasticidades, tendo em vista que são modelos log-nível. Logo, para o primeiro período, temos que SP tem um impacto de médio de 3,2% sobre a renda quando aumentamos a idade em uma unidade, ao passo que MA o impacto tende a ser maior. Pelo lado da escolaridade, os efeitos são maiores para ambas as UFs, sendo que SP apresenta maiores influências na média. Quando tratamos do segundo período, observou-se a evolução do impacto médio dos regressores sobre a renda no MA. Por fim, é interessante notar a diferença nos parâmetros estimados nas duas abordagens, MQO e Heckman, onde de fato havia viés de seleção na amostra das UFs, uma vez que a razão da inversa de Mills se deu significativa para ampla maioria dos modelos analisados.
+ 
+##### Referências
+
+* Cameron, A. C. and P. K. Trivedi (2005), Microeconometrics: Methods and 
+Applications, Cambridge University Press, New York, Chapters 14-16
+
+* Cragg, J. G. (1971). Some statistical models for limited dependent variables with application to the demand for durable goods. Econometrica, 39(5), 829–844
+
+* TOBIN, James. Estimation of relationships for limited dependent variables. Econometrica: journal of the Econometric Society, p. 24-36, 1958.
+
+
+
